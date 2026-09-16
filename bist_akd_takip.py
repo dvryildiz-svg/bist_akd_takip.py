@@ -5,10 +5,10 @@ from PIL import Image
 import json
 import ast
 
-st.set_page_config(page_title="Kurumsal Takip (Tek Ekran)", page_icon="🦅", layout="centered")
+st.set_page_config(page_title="Kurumsal Takip (Hızlı Terminal)", page_icon="🦅", layout="centered")
 
 st.title("🦅 BİST Kurumsal Takip: Hızlı Day-Trade Terminali")
-st.markdown("Matriks AKD ekran görüntüsünü yükleyin veya panodan yapıştırın, anında trader analizi alın.")
+st.markdown("Matriks AKD ekran görüntüsünü yükleyin veya sürükleyin, anında trader analizi alın.")
 
 with st.sidebar:
     st.header("⚙️ Ayarlar")
@@ -21,24 +21,19 @@ with st.sidebar:
         st.markdown("[Ücretsiz API Anahtarınızı Buradan Alabilirsiniz](https://aistudio.google.com/app/apikey)")
         
     st.markdown("---")
-    st.info("💡 **İpucu:** Ekran alıntısı (Win+Shift+S) aldıktan sonra dosyayı kaydetmeden doğrudan buraya sürükleyip bırakabilirsiniz.")
+    st.info("💡 Ekran Alıntısı (`Win+Shift+S`) ile aldığınız görseli doğrudan dosya alanına sürükleyebilirsiniz.")
 
 KRITIK_KURUMLAR = ["BANK OF AMERICA", "BOFA", "TERA", "CITIBANK", "CİTİBANK", "DEUTSCHE"]
 
 def kurum_tespit(kurum_adi):
     return any(k in str(kurum_adi).upper() for k in KRITIK_KURUMLAR)
 
-def analiz_motoru(resim_dosyasi, api_key):
+def hizli_analiz(resim_dosyasi, api_key):
     genai.configure(api_key=api_key.strip())
     img = Image.open(resim_dosyasi)
     
-    # Hız odaklı Flash model öncelikli arama
-    mevcut_modeller = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-    if not mevcut_modeller:
-        raise Exception("Yetkili model bulunamadı.")
-        
-    # Önceliği hız için flash modellere verelim
-    mevcut_modeller.sort(key=lambda x: 0 if 'flash' in x.lower() else 1)
+    # Doğrudan en hızlı ve kararlı flash modele bağlanıyoruz (Zaman kaybı yok)
+    model = genai.GenerativeModel('gemini-2.5-flash')
     
     prompt = """
     SEN UZMAN BİR DAY-TRADER VE BİLGİSAYAR SİSTEMİSİN.
@@ -58,22 +53,7 @@ def analiz_motoru(resim_dosyasi, api_key):
     KURALLAR: Rakamlarda binlik ayracı kullanma, ondalık için nokta kullan, 'Diğer' maliyeti 0 olsun.
     """
     
-    calisan_model = None
-    response = None
-    
-    for m_isim in mevcut_modeller:
-        kisa_isim = m_isim.replace("models/", "")
-        try:
-            model = genai.GenerativeModel(kisa_isim)
-            response = model.generate_content([prompt, img])
-            calisan_model = kisa_isim
-            break 
-        except Exception:
-            continue
-            
-    if not response:
-        raise Exception("Yetkili modeller bu görseli okuyamadı.")
-    
+    response = model.generate_content([prompt, img])
     raw_text = response.text
     
     start_idx = raw_text.find('{')
@@ -92,7 +72,7 @@ def analiz_motoru(resim_dosyasi, api_key):
         try:
             data = ast.literal_eval(json_metni)
         except Exception as e:
-            raise Exception(f"JSON Çeviri Hatası: {e}\n\nVèri:\n{json_metni}")
+            raise Exception(f"Çeviri Hatası: {e}\n\nVeri:\n{json_metni}")
             
     yorum = data.get("yorum", "Yorum üretilemedi.")
     veri_listesi = data.get("veri", [])
@@ -105,25 +85,23 @@ def analiz_motoru(resim_dosyasi, api_key):
     df["Maliyet"] = pd.to_numeric(df["Maliyet"], errors='coerce').fillna(0)
     df = df[df["Net Lot"] != 0].sort_values(by="Net Lot", ascending=False)
     
-    return yorum, df, calisan_model
+    return yorum, df
 
-# TEK EKRAN & DOSYA / YAPIŞTIRMA ALANI
-yuklenen_dosya = st.file_uploader("Matriks Ekran Görüntüsünü Yükleyin veya Sürükleyip Bırakın", type=['png', 'jpg', 'jpeg'])
+# ARAYÜZ
+yuklenen_dosya = st.file_uploader("Matriks Ekran Görüntüsünü Yükleyin", type=['png', 'jpg', 'jpeg'])
 
 if yuklenen_dosya:
-    st.image(yuklenen_dosya, use_container_width=True)
+    st.image(yuklenen_resim := yuklenen_dosya, use_container_width=True)
     
     if not api_key:
         st.warning("⚠️ Lütfen API Anahtarınızı girin.")
     else:
         if st.button("🚀 Hızlı Analizi Başlat", use_container_width=True):
-            with st.spinner("Kartal gözüyle inceleniyor..."):
+            with st.spinner("Şimşek hızıyla analiz ediliyor..."):
                 try:
-                    yorum, df, model_adi = analiz_motoru(yuklenen_dosya, api_key)
+                    yorum, df = hizli_analiz(yuklenen_dosya, api_key)
                     
                     st.info(f"💡 **Trader Yorumu:**\n\n{yorum}")
-                    st.caption(f"Hızlı Okuyan Model: {model_adi}")
-                    
                     st.dataframe(df.style.format({"Net Lot": "{:,.0f}", "Maliyet": "{:,.3f}"}), use_container_width=True, hide_index=True)
                     
                     df_kritik = df[df["Kurum"].apply(kurum_tespit)].copy()
