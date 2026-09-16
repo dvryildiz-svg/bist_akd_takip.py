@@ -144,6 +144,7 @@ if yuklenen_dosya:
             with st.spinner("Piyasa röntgeni çekiliyor ve Google Sheets'e işleniyor..."):
                 try:
                     hisse_adi, sinyal, gerekce, df = karar_destek_analizi(yuklenen_dosya, api_key)
+                    # Saat formatı düzeltildi (%Y-%m-%d %H:%M:%S)
                     simdiki_zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     
                     # Kritik kurumlar toplamı
