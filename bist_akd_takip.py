@@ -33,8 +33,12 @@ def kurum_tespit(kurum_adi):
 
 def google_sheets_e_isle(tarih_saat, hisse, sinyal, gerekce, df_veri, kritik_baski):
     try:
-        # "Diğer" kalemini eleyip tahtayı yöneten gerçek kurumu bulalım
-        df_kurumlar = df_veri[~df_veri["Kurum"].str.upper().isin(["DİĞER", "DIGER"])]
+        # Kurum isimlerini temizleyelim ve Diğer / Diger varyasyonlarını tamamen eleyelim
+        df_temiz = df_veri.copy()
+        df_temiz["Kurum_Temiz"] = df_temiz["Kurum"].astype(str).str.upper().str.strip()
+        
+        yasakli_kelimeler = ["DİĞER", "DIGER", "DIĞER", "DİGER"]
+        df_kurumlar = df_temiz[~df_temiz["Kurum_Temiz"].isin(yasakli_kelimeler)]
         
         if not df_kurumlar.empty:
             en_ust_alici = df_kurumlar.iloc[0]["Kurum"]
@@ -86,7 +90,7 @@ def karar_destek_analizi(resim_dosyasi, api_key):
       ]
     }
     
-    NOT 1: "hisse_adi" alanına görselde yazان hisse kodunu (Örn: THYAO, ENERYA, EREGL vb.) büyük harfle yaz. Bulamazsan "BİLİNMEYEN" yaz.
+    NOT 1: "hisse_adi" alanına görselde yazan hisse kodunu (Örn: THYAO, ENERYA, EREGL vb.) büyük harfle yaz. Bulamazsan "BİLİNMEYEN" yaz.
     NOT 2: "sinyal" alanı KESİNLİKLE sadece "AL", "SAT" veya "TUT" kelimelerinden biri olmalıdır.
     KURALLAR: Rakamlarda binlik ayracı kullanma, ondalık için nokta kullan, 'Diğer' maliyeti 0 olsun.
     """
