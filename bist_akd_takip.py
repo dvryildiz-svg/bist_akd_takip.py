@@ -99,4 +99,61 @@ if yuklenen_resim:
                     if "```json" in raw_text:
                         json_metni = raw_text.split("```json")[1].split("```")[0].strip()
                     elif "```" in raw_text:
-                        json_metni = raw_text.split("
+                        json_metni = raw_text.split("```")[1].strip()
+                    else:
+                        # Eğer yapay zeka düz metin içine gömdüyse, sadece köşeli parantezli diziyi al
+                        match = re.search(r'\[\s*\{.*?\}\s*\]', raw_text, re.DOTALL)
+                        if match:
+                            json_metni = match.group(0)
+                        else:
+                            baslangic = raw_text.find('[')
+                            bitis = raw_text.rfind(']')
+                            if baslangic != -1 and bitis != -1:
+                                json_metni = raw_text[baslangic:bitis+1]
+                            else:
+                                raise Exception(f"Format bulunamadı. Yapay zeka yanıtı:\n{raw_text}")
+                    
+                    # SON KONTROL VE ÇEVİRİ
+                    try:
+                        veri_listesi = json.loads(json_metni)
+                    except Exception:
+                        try:
+                            veri_listesi = ast.literal_eval(json_metni)
+                        except Exception as e:
+                            raise Exception(f"Ayıklanan kod JSON'a çevrilemedi: {e}\nAyıklanan Kısım:\n{json_metni}")
+                        
+                    df_clean = pd.DataFrame(veri_listesi)
+                    
+                    if df_clean.empty:
+                        raise Exception("Tablo okundu ancak geçerli veri bulunamadı.")
+                    
+                    df_clean["Net Lot"] = pd.to_numeric(df_clean["Net Lot"], errors='coerce').fillna(0)
+                    df_clean["Maliyet"] = pd.to_numeric(df_clean["Maliyet"], errors='coerce').fillna(0)
+                    
+                    df_clean = df_clean[df_clean["Net Lot"] != 0].sort_values(by="Net Lot", ascending=False)
+                    
+                    st.markdown("---")
+                    st.subheader(f"🎯 Net Kurumsal Analiz (Okuyan Model: {calisan_model})")
+                    
+                    c1, c2 = st.columns([2, 1.5])
+                    
+                    with c1:
+                        st.dataframe(df_clean, use_container_width=True, hide_index=True)
+                        
+                    with c2:
+                        df_kritik = df_clean[df_clean["Kurum"].apply(kurum_tespit)].copy()
+                        toplam_baski = df_kritik["Net Lot"].sum() if not df_kritik.empty else 0
+                        
+                        st.markdown("### 🦅 Kritik Kurum Baskısı")
+                        if toplam_baski > 0:
+                            st.success(f"**🟢 GÜÇLÜ ALIM**\nNet +{toplam_baski:,.0f} Lot")
+                        elif toplam_baski < 0:
+                            st.error(f"**🔴 CİDDİ SATIŞ**\nNet {toplam_baski:,.0f} Lot")
+                        else:
+                            st.info("**🟡 NÖTR BEKLEYİŞ VEYA İŞLEM YOK**")
+                            
+                        if not df_kritik.empty:
+                            st.dataframe(df_kritik.style.format({"Net Lot": "{:,.0f}", "Maliyet": "{:,.3f}"}), use_container_width=True, hide_index=True)
+                            
+                except Exception as e:
+                    st.error(f"❌ Bir hata oluştu: {e}")
