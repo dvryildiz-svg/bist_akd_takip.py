@@ -9,7 +9,6 @@ st.set_page_config(page_title="Kurumsal Takip (Yapay Zeka)", page_icon="🦅", l
 st.title("🦅 BİST Kurumsal Takip: Görüntü İşleme (OCR) Sürümü")
 st.markdown("Matriks'in **'İlk 10'** veya **'İlk 10 Toplam'** ekran görüntüsünü yükleyin. Yapay Zeka tabloyu otomatik okusun.")
 
-# Güvenlik için API Key Giriş Alanı (Sol Menü)
 with st.sidebar:
     st.header("⚙️ Ayarlar")
     api_key = st.text_input("Gemini API Anahtarı:", type="password")
@@ -36,11 +35,11 @@ if yuklenen_resim:
         if st.button("🚀 Görüntüyü Analiz Et (Yapay Zeka'yı Başlat)"):
             with st.spinner("Kartal gözüyle ekran okunuyor... (10-15 saniye sürebilir)"):
                 try:
-                    # Gemini Modelini Bağla
-                    genai.configure(api_key=api_key)
+                    # Olası boşluk hatalarını silmek için .strip() ekledik
+                    temiz_api_key = api_key.strip()
+                    genai.configure(api_key=temiz_api_key)
                     img = Image.open(yuklenen_resim)
                     
-                    # Yapay Zekaya Talimat (Prompt)
                     prompt = """
                     Sen uzman bir Borsa İstanbul veri analistisin.
                     Bu ekran görüntüsündeki aracı kurum dağılımı (AKD) tablosunu incele.
@@ -54,30 +53,27 @@ if yuklenen_resim:
                     Eksi (-) işaretlerine ve milyonluk rakamlara çok dikkat et.
                     """
                     
-                    # OTOMATİK MODEL SEÇİCİ (404 Hatasını Ezip Geçer)
-                    model_isimleri = [
-                        'gemini-1.5-flash', 
-                        'gemini-1.5-pro', 
-                        'gemini-pro-vision', 
-                        'gemini-1.0-pro-vision-latest'
-                    ]
+                    # Sadece en kararlı iki modeli test edeceğiz
+                    model_isimleri = ['gemini-1.5-flash', 'gemini-1.5-pro']
                     
                     response = None
                     calisan_model = ""
+                    hata_loglari = [] # Google'ın gerçek hatalarını burada toplayacağız
                     
                     for m in model_isimleri:
                         try:
                             model = genai.GenerativeModel(m)
                             response = model.generate_content([prompt, img])
                             calisan_model = m
-                            break # Eğer model çalışırsa döngüyü hemen kır ve devam et
-                        except Exception:
-                            continue # Çalışmazsa sessizce diğer modele geç
+                            break 
+                        except Exception as e:
+                            hata_loglari.append(f"{m} HAKİKİ HATA -> {str(e)}")
+                            continue 
                             
                     if not response:
-                        raise Exception("Google API anahtarınız bu modellerin hiçbirine erişim sağlayamadı.")
+                        detayli_hata = " | ".join(hata_loglari)
+                        raise Exception(f"Google Reddediyor. Nedeni: {detayli_hata}")
                     
-                    # Gelen metni temizle ve JSON'a çevir
                     raw_text = response.text.strip()
                     if raw_text.startswith("```json"):
                         raw_text = raw_text.replace("```json", "").replace("```", "").strip()
@@ -87,7 +83,6 @@ if yuklenen_resim:
                     veri_listesi = json.loads(raw_text)
                     df_clean = pd.DataFrame(veri_listesi)
                     
-                    # Veri tiplerini sayıya zorla
                     df_clean["Net Lot"] = pd.to_numeric(df_clean["Net Lot"], errors='coerce').fillna(0)
                     df_clean["Maliyet"] = pd.to_numeric(df_clean["Maliyet"], errors='coerce').fillna(0)
                     
@@ -117,4 +112,4 @@ if yuklenen_resim:
                             st.dataframe(df_kritik.style.format({"Net Lot": "{:,.0f}", "Maliyet": "{:,.3f}"}), use_container_width=True, hide_index=True)
                             
                 except Exception as e:
-                    st.error(f"❌ Resmi okurken bir hata oluştu veya tablo anlaşılamadı. Hata: {e}")
+                    st.error(f"❌ {e}")
