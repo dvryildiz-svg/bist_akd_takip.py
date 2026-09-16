@@ -8,7 +8,7 @@ import ast
 st.set_page_config(page_title="Kurumsal Takip (Karar Destek Terminali)", page_icon="🦅", layout="centered")
 
 st.title("🦅 BİST Kurumsal Takip: Trader Karar Terminali")
-st.markdown("Matriks AKD ekran görüntüsünü yükleyin; sistem anında **AL / SAT / TUT** sinyali ve gerekçesini versin.")
+st.markdown("Matriks AKD ekran görüntüsünü yükleyin; sistem hisseyi tanısın, **AL / SAT / TUT** sinyali versin.")
 
 with st.sidebar:
     st.header("⚙️ Ayarlar")
@@ -36,11 +36,12 @@ def karar_destek_analizi(resim_dosyasi, api_key):
     
     prompt = """
     SEN UZMAN BİR DAY-TRADER VE RİSK YÖNETİCİSİSİN.
-    Ekran görüntüsündeki aracı kurum dağılımı (AKD) tablosunu incele.
+    Ekran görüntüsündeki aracı kurum dağılımı (AKD) tablosunu ve başlık kısımlarını incele.
     
     Bana SADECE VE SADECE aşağıdaki formatta bir JSON döndür. Başka hiçbir açıklama yazma.
     
     {
+      "hisse_adi": "ENERYA",
       "sinyal": "AL", 
       "gerekce": "Buraya 3-4 cümlelik Türkçe trader yorumunu yaz: Hangi kurum alıyor/satıyor, maliyetlerin fiyata etkisi nedir ve neden bu sinyal üretildi?",
       "veri": [
@@ -50,7 +51,8 @@ def karar_destek_analizi(resim_dosyasi, api_key):
       ]
     }
     
-    NOT: "sinyal" alanı KESİNLİKLE sadece "AL", "SAT" veya "TUT" kelimelerinden biri olmalıdır.
+    NOT 1: "hisse_adi" alanına görselde yazan hisse kodunu (Örn: THYAO, ENERYA, EREGL vb.) büyük harfle yaz. Bulamazsan "BİLİNMEYEN" yaz.
+    NOT 2: "sinyal" alanı KESİNLİKLE sadece "AL", "SAT" veya "TUT" kelimelerinden biri olmalıdır.
     KURALLAR: Rakamlarda binlik ayracı kullanma, ondalık için nokta kullan, 'Diğer' maliyeti 0 olsun.
     """
     
@@ -75,6 +77,7 @@ def karar_destek_analizi(resim_dosyasi, api_key):
         except Exception as e:
             raise Exception(f"Çeviri Hatası: {e}\n\nVeri:\n{json_metni}")
             
+    hisse_adi = data.get("hisse_adi", "HİSSE").upper()
     sinyal = data.get("sinyal", "TUT").upper()
     gerekce = data.get("gerekce", "Yorum üretilemedi.")
     veri_listesi = data.get("veri", [])
@@ -87,7 +90,7 @@ def karar_destek_analizi(resim_dosyasi, api_key):
     df["Maliyet"] = pd.to_numeric(df["Maliyet"], errors='coerce').fillna(0)
     df = df[df["Net Lot"] != 0].sort_values(by="Net Lot", ascending=False)
     
-    return sinyal, gerekce, df
+    return hisse_adi, sinyal, gerekce, df
 
 # ARAYÜZ
 yuklenen_dosya = st.file_uploader("Matriks Ekran Görüntüsünü Yükleyin", type=['png', 'jpg', 'jpeg'])
@@ -101,9 +104,11 @@ if yuklenen_dosya:
         if st.button("🚀 Karar Destek Analizini Başlat", use_container_width=True):
             with st.spinner("Piyasa röntgeni çekiliyor..."):
                 try:
-                    sinyal, gerekce, df = karar_destek_analizi(yuklenen_dosya, api_key)
+                    hisse_adi, sinyal, gerekce, df = karar_destek_analizi(yuklenen_dosya, api_key)
                     
-                    # SİNYALE GÖRE RENKLİ GÖRSEL ALARMLAR (Tırnak hataları giderildi)
+                    # HİSSE ADI VE SİNYAL BAŞLIĞI
+                    st.markdown(f"### 🎯 Hisse: **{hisse_adi}**")
+                    
                     if sinyal == "AL":
                         st.success(f"🟢 **SİNYAL: GÜÇLÜ AL**\n\n**Gerekçe:** {gerekce}")
                     elif sinyal == "SAT":
