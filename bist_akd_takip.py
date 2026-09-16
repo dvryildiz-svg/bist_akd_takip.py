@@ -33,8 +33,15 @@ def kurum_tespit(kurum_adi):
 
 def google_sheets_e_isle(tarih_saat, hisse, sinyal, gerekce, df_veri, kritik_baski):
     try:
-        en_ust_alici = df_veri.iloc[0]["Kurum"] if not df_veri.empty else "YOK"
-        en_ust_alici_lot = df_veri.iloc[0]["Net Lot"] if not df_veri.empty else 0
+        # "Diğer" kalemini eleyip tahtayı yöneten gerçek kurumu bulalım
+        df_kurumlar = df_veri[~df_veri["Kurum"].str.upper().isin(["DİĞER", "DIGER"])]
+        
+        if not df_kurumlar.empty:
+            en_ust_alici = df_kurumlar.iloc[0]["Kurum"]
+            en_ust_alici_lot = df_kurumlar.iloc[0]["Net Lot"]
+        else:
+            en_ust_alici = "YOK"
+            en_ust_alici_lot = 0
         
         payload = {
             "tarih": str(tarih_saat),
@@ -79,7 +86,7 @@ def karar_destek_analizi(resim_dosyasi, api_key):
       ]
     }
     
-    NOT 1: "hisse_adi" alanına görselde yazan hisse kodunu (Örn: THYAO, ENERYA, EREGL vb.) büyük harfle yaz. Bulamazsan "BİLİNMEYEN" yaz.
+    NOT 1: "hisse_adi" alanına görselde yazان hisse kodunu (Örn: THYAO, ENERYA, EREGL vb.) büyük harfle yaz. Bulamazsan "BİLİNMEYEN" yaz.
     NOT 2: "sinyal" alanı KESİNLİKLE sadece "AL", "SAT" veya "TUT" kelimelerinden biri olmalıdır.
     KURALLAR: Rakamlarda binlik ayracı kullanma, ondalık için nokta kullan, 'Diğer' maliyeti 0 olsun.
     """
@@ -133,7 +140,7 @@ if yuklenen_dosya:
             with st.spinner("Piyasa röntgeni çekiliyor ve Google Sheets'e işleniyor..."):
                 try:
                     hisse_adi, sinyal, gerekce, df = karar_destek_analizi(yuklenen_dosya, api_key)
-                    simdiki_zaman = datetime.now().strftime("%Y-%m-d %H:%M:%S")
+                    simdiki_zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     
                     # Kritik kurumlar toplamı
                     df_kritik = df[df["Kurum"].apply(kurum_tespit)].copy()
