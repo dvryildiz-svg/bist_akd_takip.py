@@ -6,10 +6,10 @@ import json
 import ast
 import re
 
-st.set_page_config(page_title="Kurumsal Takip (Yapay Zeka)", page_icon="🦅", layout="wide")
+st.set_page_config(page_title="Kurumsal Takip (Çift Ekran)", page_icon="🦅", layout="wide")
 
-st.title("🦅 BİST Kurumsal Takip: Görüntü İşleme (OCR) Sürümü")
-st.markdown("Matriks'in **'İlk 10'** veya **'İlk 10 Toplam'** ekran görüntüsünü yükleyin. Yapay Zeka tabloyu otomatik okusun.")
+st.title("🦅 BİST Kurumsal Takip: Profesyonel Çift Ekran Terminali")
+st.markdown("İki farklı tahtayı veya aynı tahtanın farklı saatlerdeki durumunu yükleyip, yapay zeka destekli gün içi trader analizi alabilirsiniz.")
 
 with st.sidebar:
     st.header("⚙️ Ayarlar")
@@ -29,119 +29,134 @@ KRITIK_KURUMLAR = ["BANK OF AMERICA", "BOFA", "TERA", "CITIBANK", "CİTİBANK", 
 def kurum_tespit(kurum_adi):
     return any(k in str(kurum_adi).upper() for k in KRITIK_KURUMLAR)
 
-yuklenen_resim = st.file_uploader(
-    "Matriks Ekran Görüntüsünü Yükleyin (PNG, JPG)", 
-    type=['png', 'jpg', 'jpeg']
-)
-
-if yuklenen_resim:
-    st.image(yuklenen_resim, caption="Yüklenen Ekran Görüntüsü", use_container_width=True)
+def analiz_motoru(resim_dosyasi, api_key):
+    genai.configure(api_key=api_key.strip())
+    img = Image.open(resim_dosyasi)
     
-    if not api_key:
-        st.warning("⚠️ Lütfen tabloyu okuyabilmem için soldaki menüden Gemini API Anahtarınızı girin.")
+    prompt = """
+    SEN UZMAN BİR DAY-TRADER VE BİLGİSAYAR SİSTEMİSİN.
+    Ekran görüntüsündeki aracı kurum dağılımı (AKD) tablosunu oku ve İKİ BÖLÜM halinde yanıtla.
+
+    ---BÖLÜM 1: TRADER YORUMU---
+    Tabloya bakarak gün içi trade eden biri için özet geç: Kim tahtayı sürüklüyor (en agresif alıcı/satıcı)? Maliyetlere bakarak fiyattaki baskı yönü (aşağı/yukarı) nedir?
+    Yorumun 3-4 cümleyi geçmesin.
+
+    ---BÖLÜM 2: JSON VERİSİ---
+    SADECE aşağıdaki formata uygun, köşeli parantez ile başlayan geçerli bir JSON dizisi oluştur.
+    Başka tek bir kelime ekleme. Rakamlarda binlik ayracı KESİNLİKLE KULLANMA.
+    [
+      {"Kurum": "YAPI KREDI", "Net Lot": 2096877, "Maliyet": 12.134},
+      {"Kurum": "BANK OF AMERICA", "Net Lot": 5668458, "Maliyet": 12.471}
+    ]
+    """
+    
+    mevcut_modeller = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+    if not mevcut_modeller:
+        raise Exception("Yetkili model bulunamadı.")
+        
+    calisan_model = None
+    response = None
+    
+    for m_isim in mevcut_modeller:
+        kisa_isim = m_isim.replace("models/", "")
+        try:
+            model = genai.GenerativeModel(kisa_isim)
+            response = model.generate_content([prompt, img])
+            calisan_model = kisa_isim
+            break 
+        except Exception:
+            continue
+            
+    if not response:
+        raise Exception("Yetkili modeller bu görseli okuyamadı.")
+    
+    raw_text = response.text
+    
+    match = re.search(r'\[.*\]', raw_text, re.DOTALL)
+    if match:
+        json_metni = match.group(0)
+        yorum = raw_text[:match.start()].replace("---BÖLÜM 1: TRADER YORUMU---", "").strip()
+        if not yorum:
+            yorum = "Yapay zeka yorum üretemedi, ancak veriler başarıyla çekildi."
+            
+        try:
+            veri_listesi = json.loads(json_metni)
+        except Exception:
+            try:
+                veri_listesi = ast.literal_eval(json_metni)
+            except Exception as e:
+                raise Exception(f"JSON Çeviri Hatası: {e}")
     else:
-        if st.button("🚀 Görüntüyü Analiz Et (Yapay Zeka'yı Başlat)"):
-            with st.spinner("Kartal gözüyle ekran okunuyor... (10-15 saniye sürebilir)"):
-                try:
-                    temiz_api_key = api_key.strip()
-                    genai.configure(api_key=temiz_api_key)
-                    img = Image.open(yuklenen_resim)
-                    
-                    prompt = """
-                    SEN BİR BİLGİSAYAR SİSTEMİSİN.
-                    Ekran görüntüsündeki aracı kurum dağılımı (AKD) tablosunu oku.
-                    
-                    ÇOK ÖNEMLİ KURALLAR:
-                    1. Kendi kendine düşünme, "Data extraction" veya "Refining" gibi analiz adımlarını KESİNLİKLE YAZMA.
-                    2. SADECE aşağıdaki gibi bir JSON dizisi ile cevap ver. Başka tek bir kelime dahi etme.
-                    3. Rakamlarda binlik ayracı KULLANMA (5.668.458 yerine 5668458 yaz).
-                    
-                    Örnek Çıktı:
-                    [
-                      {"Kurum": "YAPI KREDI", "Net Lot": 2096877, "Maliyet": 12.134},
-                      {"Kurum": "BANK OF AMERICA", "Net Lot": 5668458, "Maliyet": 12.471},
-                      {"Kurum": "IS", "Net Lot": -6663155, "Maliyet": 12.162}
-                    ]
-                    """
-                    
-                    mevcut_modeller = []
-                    for m in genai.list_models():
-                        if 'generateContent' in m.supported_generation_methods:
-                            mevcut_modeller.append(m.name)
-                            
-                    if not mevcut_modeller:
-                        st.error("❌ Google bu API anahtarına hiçbir model için yetki vermemiş.")
-                        st.stop()
-                        
-                    st.info(f"🔍 Google API ile bağlantı kuruldu. Erişilebilen Modeller: {', '.join([m.replace('models/', '') for m in mevcut_modeller[:3]])}...")
-                    
-                    calisan_model = None
-                    response = None
-                    
-                    for m_isim in mevcut_modeller:
+        raise Exception(f"Geçerli format bulunamadı. Yanıt: {raw_text}")
+        
+    df = pd.DataFrame(veri_listesi)
+    if df.empty:
+        raise Exception("Tablo boş.")
+        
+    df["Net Lot"] = pd.to_numeric(df["Net Lot"], errors='coerce').fillna(0)
+    df["Maliyet"] = pd.to_numeric(df["Maliyet"], errors='coerce').fillna(0)
+    df = df[df["Net Lot"] != 0].sort_values(by="Net Lot", ascending=False)
+    
+    return yorum, df, calisan_model
+
+# ÇİFT EKRAN ARAYÜZÜ
+c_sol, c_sag = st.columns(2)
+
+with c_sol:
+    st.subheader("🖥️ 1. Ekran (Örn: Sabah veya Hisse A)")
+    resim_1 = st.file_uploader("1. Matriks Tablosu", type=['png', 'jpg', 'jpeg'], key="r1")
+    if resim_1:
+        st.image(resim_1, use_container_width=True)
+
+with c_sag:
+    st.subheader("🖥️ 2. Ekran (Örn: Öğleden Sonra veya Hisse B)")
+    resim_2 = st.file_uploader("2. Matriks Tablosu", type=['png', 'jpg', 'jpeg'], key="r2")
+    if resim_2:
+        st.image(resim_2, use_container_width=True)
+
+if resim_1 or resim_2:
+    if not api_key:
+        st.warning("⚠️ Lütfen API Anahtarınızı girin.")
+    else:
+        # Tek bir dev butonla iki ekranı birden ateşliyoruz
+        if st.button("🚀 Yüklenen Ekranları Analiz Et (Yapay Zeka'yı Başlat)", use_container_width=True):
+            
+            res_sol, res_sag = st.columns(2)
+            
+            if resim_1:
+                with res_sol:
+                    with st.spinner("1. Ekran analiz ediliyor..."):
                         try:
-                            kisa_isim = m_isim.replace("models/", "")
-                            model = genai.GenerativeModel(kisa_isim)
-                            response = model.generate_content([prompt, img])
-                            calisan_model = kisa_isim
-                            break 
-                        except Exception:
-                            continue
+                            yorum1, df1, model1 = analiz_motoru(resim_1, api_key)
+                            st.info(f"💡 **Trader Yorumu:**\n\n{yorum1}")
+                            st.caption(f"Okuyan Model: {model1}")
                             
-                    if not response:
-                        raise Exception("Bulunan yetkili modellerin hiçbiri bu görseli okumayı başaramadı.")
-                    
-                    raw_text = response.text
-                    
-                    # YENİ VE KUSURSUZ CIMBIZ METODU: 
-                    # Sadece köşeli parantez [ ] ile başlayıp biten kısmı otomatik yakalar
-                    match = re.search(r'\[.*\]', raw_text, re.DOTALL)
-                    
-                    if match:
-                        json_metni = match.group(0)
-                        
+                            st.dataframe(df1.style.format({"Net Lot": "{:,.0f}", "Maliyet": "{:,.3f}"}), use_container_width=True, hide_index=True)
+                            
+                            df1_kritik = df1[df1["Kurum"].apply(kurum_tespit)].copy()
+                            baski1 = df1_kritik["Net Lot"].sum() if not df1_kritik.empty else 0
+                            if baski1 > 0:
+                                st.success(f"🟢 **Kritik Kurumlar:** Net +{baski1:,.0f} Lot Alımda")
+                            elif baski1 < 0:
+                                st.error(f"🔴 **Kritik Kurumlar:** Net {baski1:,.0f} Lot Satışta")
+                        except Exception as e:
+                            st.error(f"❌ 1. Ekran Hatası: {e}")
+                            
+            if resim_2:
+                with res_sag:
+                    with st.spinner("2. Ekran analiz ediliyor..."):
                         try:
-                            veri_listesi = json.loads(json_metni)
-                        except Exception:
-                            try:
-                                veri_listesi = ast.literal_eval(json_metni)
-                            except Exception as e:
-                                raise Exception(f"Okunan kod formata uymuyor: {e}\nAyıklanan Metin:\n{json_metni}")
-                    else:
-                        raise Exception(f"Köşeli parantezli dizi bulunamadı. Yapay Zeka Yanıtı:\n{raw_text}")
-                        
-                    df_clean = pd.DataFrame(veri_listesi)
-                    
-                    if df_clean.empty:
-                        raise Exception("Tablo okundu ancak geçerli veri bulunamadı.")
-                    
-                    df_clean["Net Lot"] = pd.to_numeric(df_clean["Net Lot"], errors='coerce').fillna(0)
-                    df_clean["Maliyet"] = pd.to_numeric(df_clean["Maliyet"], errors='coerce').fillna(0)
-                    
-                    df_clean = df_clean[df_clean["Net Lot"] != 0].sort_values(by="Net Lot", ascending=False)
-                    
-                    st.markdown("---")
-                    st.subheader(f"🎯 Net Kurumsal Analiz (Okuyan Model: {calisan_model})")
-                    
-                    c1, c2 = st.columns([2, 1.5])
-                    
-                    with c1:
-                        st.dataframe(df_clean, use_container_width=True, hide_index=True)
-                        
-                    with c2:
-                        df_kritik = df_clean[df_clean["Kurum"].apply(kurum_tespit)].copy()
-                        toplam_baski = df_kritik["Net Lot"].sum() if not df_kritik.empty else 0
-                        
-                        st.markdown("### 🦅 Kritik Kurum Baskısı")
-                        if toplam_baski > 0:
-                            st.success(f"**🟢 GÜÇLÜ ALIM**\nNet +{toplam_baski:,.0f} Lot")
-                        elif toplam_baski < 0:
-                            st.error(f"**🔴 CİDDİ SATIŞ**\nNet {toplam_baski:,.0f} Lot")
-                        else:
-                            st.info("**🟡 NÖTR BEKLEYİŞ VEYA İŞLEM YOK**")
+                            yorum2, df2, model2 = analiz_motoru(resim_2, api_key)
+                            st.info(f"💡 **Trader Yorumu:**\n\n{yorum2}")
+                            st.caption(f"Okuyan Model: {model2}")
                             
-                        if not df_kritik.empty:
-                            st.dataframe(df_kritik.style.format({"Net Lot": "{:,.0f}", "Maliyet": "{:,.3f}"}), use_container_width=True, hide_index=True)
+                            st.dataframe(df2.style.format({"Net Lot": "{:,.0f}", "Maliyet": "{:,.3f}"}), use_container_width=True, hide_index=True)
                             
-                except Exception as e:
-                    st.error(f"❌ Bir hata oluştu: {e}")
+                            df2_kritik = df2[df2["Kurum"].apply(kurum_tespit)].copy()
+                            baski2 = df2_kritik["Net Lot"].sum() if not df2_kritik.empty else 0
+                            if baski2 > 0:
+                                st.success(f"🟢 **Kritik Kurumlar:** Net +{baski2:,.0f} Lot Alımda")
+                            elif baski2 < 0:
+                                st.error(f"🔴 **Kritik Kurumlar:** Net {baski2:,.0f} Lot Satışta")
+                        except Exception as e:
+                            st.error(f"❌ 2. Ekran Hatası: {e}")
