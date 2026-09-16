@@ -32,8 +32,8 @@ def hizli_analiz(resim_dosyasi, api_key):
     genai.configure(api_key=api_key.strip())
     img = Image.open(resim_dosyasi)
     
-    # Doğrudan en hızlı ve kararlı flash modele bağlanıyoruz (Zaman kaybı yok)
-    model = genai.GenerativeModel('gemini-2.5-flash')
+    # Güncel ve en hızlı flash model (gemini-3.6-flash)
+    model = genai.GenerativeModel('gemini-3.6-flash')
     
     prompt = """
     SEN UZMAN BİR DAY-TRADER VE BİLGİSAYAR SİSTEMİSİN.
@@ -91,7 +91,7 @@ def hizli_analiz(resim_dosyasi, api_key):
 yuklenen_dosya = st.file_uploader("Matriks Ekran Görüntüsünü Yükleyin", type=['png', 'jpg', 'jpeg'])
 
 if yuklenen_dosya:
-    st.image(yuklenen_resim := yuklenen_dosya, use_container_width=True)
+    st.image(yuklenen_dosya, use_container_width=True)
     
     if not api_key:
         st.warning("⚠️ Lütfen API Anahtarınızı girin.")
