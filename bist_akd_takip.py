@@ -4,7 +4,7 @@ import google.generativeai as genai
 from PIL import Image
 import json
 import ast
-import re # YENİ: Yapay zekanın gevezeliğini filtrelemek için metin cerrahı
+import re
 
 st.set_page_config(page_title="Kurumsal Takip (Yapay Zeka)", page_icon="🦅", layout="wide")
 
@@ -47,7 +47,6 @@ if yuklenen_resim:
                     genai.configure(api_key=temiz_api_key)
                     img = Image.open(yuklenen_resim)
                     
-                    # SUSTURUCU TAKILMIŞ PROMPT
                     prompt = """
                     SEN BİR BİLGİSAYAR SİSTEMİSİN.
                     Ekran görüntüsündeki aracı kurum dağılımı (AKD) tablosunu oku.
@@ -93,34 +92,23 @@ if yuklenen_resim:
                         raise Exception("Bulunan yetkili modellerin hiçbiri bu görseli okumayı başaramadı.")
                     
                     raw_text = response.text
-                    json_metni = ""
                     
-                    # CIMBIZLA VERİ ÇIKARMA (REGEX VE MARKDOWN ANALİZİ)
-                    if "```json" in raw_text:
-                        json_metni = raw_text.split("```json")[1].split("```")[0].strip()
-                    elif "```" in raw_text:
-                        json_metni = raw_text.split("```")[1].strip()
-                    else:
-                        # Eğer yapay zeka düz metin içine gömdüyse, sadece köşeli parantezli diziyi al
-                        match = re.search(r'\[\s*\{.*?\}\s*\]', raw_text, re.DOTALL)
-                        if match:
-                            json_metni = match.group(0)
-                        else:
-                            baslangic = raw_text.find('[')
-                            bitis = raw_text.rfind(']')
-                            if baslangic != -1 and bitis != -1:
-                                json_metni = raw_text[baslangic:bitis+1]
-                            else:
-                                raise Exception(f"Format bulunamadı. Yapay zeka yanıtı:\n{raw_text}")
+                    # YENİ VE KUSURSUZ CIMBIZ METODU: 
+                    # Sadece köşeli parantez [ ] ile başlayıp biten kısmı otomatik yakalar
+                    match = re.search(r'\[.*\]', raw_text, re.DOTALL)
                     
-                    # SON KONTROL VE ÇEVİRİ
-                    try:
-                        veri_listesi = json.loads(json_metni)
-                    except Exception:
+                    if match:
+                        json_metni = match.group(0)
+                        
                         try:
-                            veri_listesi = ast.literal_eval(json_metni)
-                        except Exception as e:
-                            raise Exception(f"Ayıklanan kod JSON'a çevrilemedi: {e}\nAyıklanan Kısım:\n{json_metni}")
+                            veri_listesi = json.loads(json_metni)
+                        except Exception:
+                            try:
+                                veri_listesi = ast.literal_eval(json_metni)
+                            except Exception as e:
+                                raise Exception(f"Okunan kod formata uymuyor: {e}\nAyıklanan Metin:\n{json_metni}")
+                    else:
+                        raise Exception(f"Köşeli parantezli dizi bulunamadı. Yapay Zeka Yanıtı:\n{raw_text}")
                         
                     df_clean = pd.DataFrame(veri_listesi)
                     
