@@ -5,57 +5,56 @@ from PIL import Image
 import json
 import ast
 from datetime import datetime
-import os
+import requests
 
-st.set_page_config(page_title="Kurumsal Takip (Arşiv Konsolide Terminali)", page_icon="🦅", layout="centered")
+st.set_page_config(page_title="Kurumsal Takip (Google Sheets Bulut Arşivli)", page_icon="🦅", layout="centered")
 
-st.title("🦅 BİST Kurumsal Takip: Trader Karar & Arşiv Terminali")
-st.markdown("Matriks AKD ekran görüntüsünü yükleyin; sistem hisseyi tanısın, sinyal üretsin ve **Excel arşivine** kaydetsin.")
+st.title("🦅 BİST Kurumsal Takip: Bulut Arşivli Karar Terminali")
+st.markdown("Matriks AKD ekran görüntüsünü yükleyin; sistem hisseyi tanısın, sinyal üretsin ve **Google E-Tablolar** arşivine kaydetsin.")
 
 with st.sidebar:
     st.header("⚙️ Ayarlar")
     
     if "GEMINI_API_KEY" in st.secrets:
         api_key = st.secrets["GEMINI_API_KEY"]
-        st.success("✅ API Anahtarı kasadan otomatik yüklendi!")
+        st.success("✅ Gemini API kasadan yüklendi!")
     else:
         api_key = st.text_input("Gemini API Anahtarı:", type="password")
         st.markdown("[Ücretsiz API Anahtarınızı Buradan Alabilirsiniz](https://aistudio.google.com/app/apikey)")
         
     st.markdown("---")
-    st.info("💡 Her analiz arka planda ortak Excel arşivine tarih ve saat bilgisiyle işlenir.")
+    st.info("💡 Her analiz doğrudan buluttaki Google Sheets arşivine tarih ve hisse bazlı işlenir.")
 
 KRITIK_KURUMLAR = ["BANK OF AMERICA", "BOFA", "TERA", "CITIBANK", "CİTİBANK", "DEUTSCHE"]
-EXCEL_DOSYA_ADI = "bist_islem_arsivi.xlsx"
+GOOGLE_SHEET_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwPdejL3zlyh9xIHd3lgyFR5rSc3BzCT5PMK1hW7fZQULmIdhDii2RpYEEXd3mhIsNJbw/exec"
 
 def kurum_tespit(kurum_adi):
     return any(k in str(kurum_adi).upper() for k in KRITIK_KURUMLAR)
 
-def arsife_kaydet(tarih_saat, hisse, sinyal, gerekce, df_veri, kritik_baski):
-    # Tablodaki verileri tek bir özet metin haline getirelim veya en büyük alıcı/satıcıyı bulalım
-    en_ust_alici = df_veri.iloc[0]["Kurum"] if not df_veri.empty else "YOK"
-    en_ust_alici_lot = df_veri.iloc[0]["Net Lot"] if not df_veri.empty else 0
-    
-    yeni_kayit = pd.DataFrame([{
-        "Tarih/Saat": tarih_saat,
-        "Hisse": hisse,
-        "Sinyal": sinyal,
-        "En Agresif Kurum": en_ust_alici,
-        "En Agresif Net Lot": en_ust_alici_lot,
-        "Kritik Kurumlar Net Baski": kritik_baski,
-        "Gerekçe": gerekce
-    }])
-    
-    if os.path.exists(EXCEL_DOSYA_ADI):
-        try:
-            eski_df = pd.read_excel(EXCEL_DOSYA_ADI)
-            guncel_df = pd.concat([eski_df, yeni_kayit], ignore_index=True)
-        except Exception:
-            guncel_df = yeni_kayit
-    else:
-        guncel_df = yeni_kayit
+def google_sheets_e_isle(tarih_saat, hisse, sinyal, gerekce, df_veri, kritik_baski):
+    try:
+        en_ust_alici = df_veri.iloc[0]["Kurum"] if not df_veri.empty else "YOK"
+        en_ust_alici_lot = df_veri.iloc[0]["Net Lot"] if not df_veri.empty else 0
         
-    guncel_df.to_excel(EXCEL_DOSYA_ADI, index=False)
+        payload = {
+            "tarih": str(tarih_saat),
+            "hisse": str(hisse),
+            "sinyal": str(sinyal),
+            "kurum": str(en_ust_alici),
+            "lot": float(en_ust_alici_lot),
+            "baski": float(kritik_baski),
+            "gerekce": str(gerekce)
+        }
+        
+        response = requests.post(GOOGLE_SHEET_WEB_APP_URL, json=payload)
+        if response.status_code == 200:
+            return True
+        else:
+            st.error(f"Bulut kayıt yanıt kodu: {response.status_code}")
+            return False
+    except Exception as e:
+        st.error(f"Bulut Arşiv Kayıt Hatası: {e}")
+        return False
 
 def karar_destek_analizi(resim_dosyasi, api_key):
     genai.configure(api_key=api_key.strip())
@@ -64,7 +63,7 @@ def karar_destek_analizi(resim_dosyasi, api_key):
     model = genai.GenerativeModel('gemini-3.6-flash')
     
     prompt = """
-    SEN UZMAN BİR DAY-TRADER VE RİSK YÖNETİCİSİN.
+    SEN UZMAN BİR DAY-TRADER VE RİSK YÖNETİCİSİSİN.
     Ekran görüntüsündeki aracı kurum dağılımı (AKD) tablosunu ve başlık kısımlarını incele.
     
     Bana SADECE VE SADECE aşağıdaki formatta bir JSON döndür. Başka hiçbir açıklama yazma.
@@ -130,18 +129,18 @@ if yuklenen_dosya:
     if not api_key:
         st.warning("⚠️ Lütfen API Anahtarınızı girin.")
     else:
-        if st.button("🚀 Analizi Başlat ve Arşive İşle", use_container_width=True):
-            with st.spinner("Piyasa röntgeni çekiliyor ve arşive kaydediliyor..."):
+        if st.button("🚀 Analizi Başlat ve Buluta Kaydet", use_container_width=True):
+            with st.spinner("Piyasa röntgeni çekiliyor ve Google Sheets'e işleniyor..."):
                 try:
                     hisse_adi, sinyal, gerekce, df = karar_destek_analizi(yuklenen_dosya, api_key)
-                    simdiki_zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    simdiki_zaman = datetime.now().strftime("%Y-%m-d %H:%M:%S")
                     
-                    # Kritik kurumlar hesaplaması
+                    # Kritik kurumlar toplamı
                     df_kritik = df[df["Kurum"].apply(kurum_tespit)].copy()
                     baski = df_kritik["Net Lot"].sum() if not df_kritik.empty else 0
                     
-                    # Excel arşivine konsolide et
-                    arsife_kaydet(simdiki_zaman, hisse_adi, sinyal, gerekce, df, baski)
+                    # Google Sheets tablosuna kaydet
+                    basarili = google_sheets_e_isle(simdiki_zaman, hisse_adi, sinyal, gerekce, df, baski)
                     
                     # GÖRSEL ÇIKTILAR
                     st.markdown(f"### 🎯 Hisse: **{hisse_adi}** | ⏱️ {simdiki_zaman}")
@@ -160,18 +159,8 @@ if yuklenen_dosya:
                     else:
                         st.info(f"📊 **Kritik Kurumlar Toplamı:** Net {baski:,.0f} Lot")
                         
-                    st.success("✅ Bu analiz başarıyla arka plandaki ortak Excel arşivine kaydedildi!")
+                    if basarili:
+                        st.success("☁️ Bu analiz Google Sheets arşivine kalıcı olarak işlendi!")
                     
                 except Exception as e:
                     st.error(f"❌ Analiz Hatası: {e}")
-
-# ARŞİVİ İNDİRME BÖLÜMÜ
-st.markdown("---")
-if os.path.exists(EXCEL_DOSYA_ADI):
-    with open(EXCEL_DOSYA_ADI, "rb") as f:
-        st.download_button(
-            label="📥 Tüm Günlük Arşiv Excel Dosyasını İndir",
-            data=f,
-            file_name="bist_gunluk_islem_arsivi.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
