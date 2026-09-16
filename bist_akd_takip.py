@@ -82,4 +82,39 @@ if yuklenen_resim:
                     if raw_text.startswith("```json"):
                         raw_text = raw_text.replace("```json", "").replace("```", "").strip()
                     elif raw_text.startswith("```"):
-                        raw_text = raw_text.replace("
+                        raw_text = raw_text.replace("```", "").strip()
+                        
+                    veri_listesi = json.loads(raw_text)
+                    df_clean = pd.DataFrame(veri_listesi)
+                    
+                    # Veri tiplerini sayıya zorla
+                    df_clean["Net Lot"] = pd.to_numeric(df_clean["Net Lot"], errors='coerce').fillna(0)
+                    df_clean["Maliyet"] = pd.to_numeric(df_clean["Maliyet"], errors='coerce').fillna(0)
+                    
+                    df_clean = df_clean[df_clean["Net Lot"] != 0].sort_values(by="Net Lot", ascending=False)
+                    
+                    st.markdown("---")
+                    st.subheader(f"🎯 Net Kurumsal Analiz (Okuyan Model: {calisan_model})")
+                    
+                    c1, c2 = st.columns([2, 1.5])
+                    
+                    with c1:
+                        st.dataframe(df_clean, use_container_width=True, hide_index=True)
+                        
+                    with c2:
+                        df_kritik = df_clean[df_clean["Kurum"].apply(kurum_tespit)].copy()
+                        toplam_baski = df_kritik["Net Lot"].sum() if not df_kritik.empty else 0
+                        
+                        st.markdown("### 🦅 Kritik Kurum Baskısı")
+                        if toplam_baski > 0:
+                            st.success(f"**🟢 GÜÇLÜ ALIM**\nNet +{toplam_baski:,.0f} Lot")
+                        elif toplam_baski < 0:
+                            st.error(f"**🔴 CİDDİ SATIŞ**\nNet {toplam_baski:,.0f} Lot")
+                        else:
+                            st.info("**🟡 NÖTR BEKLEYİŞ VEYA İŞLEM YOK**")
+                            
+                        if not df_kritik.empty:
+                            st.dataframe(df_kritik.style.format({"Net Lot": "{:,.0f}", "Maliyet": "{:,.3f}"}), use_container_width=True, hide_index=True)
+                            
+                except Exception as e:
+                    st.error(f"❌ Resmi okurken bir hata oluştu veya tablo anlaşılamadı. Hata: {e}")
