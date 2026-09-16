@@ -3,7 +3,8 @@ import pandas as pd
 import google.generativeai as genai
 from PIL import Image
 import json
-import ast # YENİ: Tek tırnak ve bozuk format hatalarını zorla çözer
+import ast
+import re # YENİ: Yapay zekanın gevezeliğini filtrelemek için metin cerrahı
 
 st.set_page_config(page_title="Kurumsal Takip (Yapay Zeka)", page_icon="🦅", layout="wide")
 
@@ -46,18 +47,17 @@ if yuklenen_resim:
                     genai.configure(api_key=temiz_api_key)
                     img = Image.open(yuklenen_resim)
                     
+                    # SUSTURUCU TAKILMIŞ PROMPT
                     prompt = """
-                    Sen uzman bir Borsa İstanbul veri analistisin.
-                    Ekran görüntüsündeki aracı kurum dağılımı (AKD) tablosunu incele.
-                    Tablodaki 'Açıklama' altındaki kurum isimlerini, 'Net Adet' miktarlarını ve 'Maliyet' verilerini çıkar.
+                    SEN BİR BİLGİSAYAR SİSTEMİSİN.
+                    Ekran görüntüsündeki aracı kurum dağılımı (AKD) tablosunu oku.
                     
                     ÇOK ÖNEMLİ KURALLAR:
-                    1. SADECE VE SADECE köşeli parantez ile başlayan JSON dizisi döndür.
-                    2. Key ve Valuelar için KESİNLİKLE ÇİFT TIRNAK (") kullan.
-                    3. Rakamlarda binlik ayracı olarak NOKTA veya VİRGÜL KULLANMA. (Örn: 5.668.458 yerine 5668458 yaz).
-                    4. Eksi (-) işaretlerine dikkat et.
+                    1. Kendi kendine düşünme, "Data extraction" veya "Refining" gibi analiz adımlarını KESİNLİKLE YAZMA.
+                    2. SADECE aşağıdaki gibi bir JSON dizisi ile cevap ver. Başka tek bir kelime dahi etme.
+                    3. Rakamlarda binlik ayracı KULLANMA (5.668.458 yerine 5668458 yaz).
                     
-                    Örnek Format:
+                    Örnek Çıktı:
                     [
                       {"Kurum": "YAPI KREDI", "Net Lot": 2096877, "Maliyet": 12.134},
                       {"Kurum": "BANK OF AMERICA", "Net Lot": 5668458, "Maliyet": 12.471},
@@ -82,79 +82,21 @@ if yuklenen_resim:
                     for m_isim in mevcut_modeller:
                         try:
                             kisa_isim = m_isim.replace("models/", "")
-                            # YAPAY ZEKAYI HATA YAPAMAYACAK ŞEKİLDE SIKIŞTIRIYORUZ
-                            model = genai.GenerativeModel(
-                                model_name=kisa_isim,
-                                generation_config={"response_mime_type": "application/json"}
-                            )
+                            model = genai.GenerativeModel(kisa_isim)
                             response = model.generate_content([prompt, img])
                             calisan_model = kisa_isim
                             break 
                         except Exception:
-                            # Eğer yeni strict mod desteklenmiyorsa eski usül dene
-                            try:
-                                model_fallback = genai.GenerativeModel(kisa_isim)
-                                response = model_fallback.generate_content([prompt, img])
-                                calisan_model = kisa_isim
-                                break
-                            except:
-                                continue
+                            continue
                             
                     if not response:
                         raise Exception("Bulunan yetkili modellerin hiçbiri bu görseli okumayı başaramadı.")
                     
                     raw_text = response.text
+                    json_metni = ""
                     
-                    baslangic = raw_text.find('[')
-                    bitis = raw_text.rfind(']')
-                    
-                    if baslangic != -1 and bitis != -1:
-                        json_metni = raw_text[baslangic:bitis+1]
-                        
-                        # ÇİFT KATMANLI OKUMA ZIRHI
-                        try:
-                            veri_listesi = json.loads(json_metni)
-                        except Exception:
-                            try:
-                                # ast.literal_eval tek tırnakları ve bozuk formatları affeder
-                                veri_listesi = ast.literal_eval(json_metni)
-                            except Exception as e:
-                                raise Exception(f"Okunan veri formatı hala düzeltilemedi: {e}. Gelen Metin:\n{json_metni}")
-                    else:
-                        raise Exception(f"Yapay zeka JSON üretemedi. Gelen yanıt: {raw_text}")
-                        
-                    df_clean = pd.DataFrame(veri_listesi)
-                    
-                    if df_clean.empty:
-                        raise Exception("Tablo okundu ancak geçerli veri bulunamadı.")
-                    
-                    df_clean["Net Lot"] = pd.to_numeric(df_clean["Net Lot"], errors='coerce').fillna(0)
-                    df_clean["Maliyet"] = pd.to_numeric(df_clean["Maliyet"], errors='coerce').fillna(0)
-                    
-                    df_clean = df_clean[df_clean["Net Lot"] != 0].sort_values(by="Net Lot", ascending=False)
-                    
-                    st.markdown("---")
-                    st.subheader(f"🎯 Net Kurumsal Analiz (Okuyan Model: {calisan_model})")
-                    
-                    c1, c2 = st.columns([2, 1.5])
-                    
-                    with c1:
-                        st.dataframe(df_clean, use_container_width=True, hide_index=True)
-                        
-                    with c2:
-                        df_kritik = df_clean[df_clean["Kurum"].apply(kurum_tespit)].copy()
-                        toplam_baski = df_kritik["Net Lot"].sum() if not df_kritik.empty else 0
-                        
-                        st.markdown("### 🦅 Kritik Kurum Baskısı")
-                        if toplam_baski > 0:
-                            st.success(f"**🟢 GÜÇLÜ ALIM**\nNet +{toplam_baski:,.0f} Lot")
-                        elif toplam_baski < 0:
-                            st.error(f"**🔴 CİDDİ SATIŞ**\nNet {toplam_baski:,.0f} Lot")
-                        else:
-                            st.info("**🟡 NÖTR BEKLEYİŞ VEYA İŞLEM YOK**")
-                            
-                        if not df_kritik.empty:
-                            st.dataframe(df_kritik.style.format({"Net Lot": "{:,.0f}", "Maliyet": "{:,.3f}"}), use_container_width=True, hide_index=True)
-                            
-                except Exception as e:
-                    st.error(f"❌ Bir hata oluştu: {e}")
+                    # CIMBIZLA VERİ ÇIKARMA (REGEX VE MARKDOWN ANALİZİ)
+                    if "```json" in raw_text:
+                        json_metni = raw_text.split("```json")[1].split("```")[0].strip()
+                    elif "```" in raw_text:
+                        json_metni = raw_text.split("
