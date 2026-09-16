@@ -11,8 +11,14 @@ st.markdown("Matriks'in **'İlk 10'** veya **'İlk 10 Toplam'** ekran görüntü
 
 with st.sidebar:
     st.header("⚙️ Ayarlar")
-    api_key = st.text_input("Gemini API Anahtarı:", type="password")
-    st.markdown("[Ücretsiz API Anahtarınızı Buradan Alabilirsiniz](https://aistudio.google.com/app/apikey)")
+    
+    if "GEMINI_API_KEY" in st.secrets:
+        api_key = st.secrets["GEMINI_API_KEY"]
+        st.success("✅ API Anahtarı sistem kasasından otomatik yüklendi!")
+    else:
+        api_key = st.text_input("Gemini API Anahtarı:", type="password")
+        st.markdown("[Ücretsiz API Anahtarınızı Buradan Alabilirsiniz](https://aistudio.google.com/app/apikey)")
+        
     st.markdown("---")
     st.info("💡 Sadece ekran görüntüsünü alıp sürükleyin. Kesme (Crop) yapmanıza bile gerek yoktur.")
 
@@ -52,45 +58,49 @@ if yuklenen_resim:
                     Eksi (-) işaretlerine ve milyonluk rakamlara çok dikkat et.
                     """
                     
-                    # 1. ADIM: API'ye sorarak izin verilen modelleri çek
                     mevcut_modeller = []
                     for m in genai.list_models():
                         if 'generateContent' in m.supported_generation_methods:
                             mevcut_modeller.append(m.name)
                             
                     if not mevcut_modeller:
-                        st.error("❌ Google bu API anahtarına hiçbir model için yetki vermemiş. Lütfen AI Studio'dan yepyeni bir anahtar oluşturun.")
+                        st.error("❌ Google bu API anahtarına hiçbir model için yetki vermemiş.")
                         st.stop()
                         
-                    # Mavi bir bilgi kutusuyla hangi modellerin bulunduğunu ekrana basalım (Hata ayıklama için harikadır)
                     st.info(f"🔍 Google API ile bağlantı kuruldu. Erişilebilen Modeller: {', '.join([m.replace('models/', '') for m in mevcut_modeller[:3]])}...")
                     
                     calisan_model = None
                     response = None
                     
-                    # 2. ADIM: Google'ın izin verdiği modelleri sırayla test et
                     for m_isim in mevcut_modeller:
                         try:
                             kisa_isim = m_isim.replace("models/", "")
                             model = genai.GenerativeModel(kisa_isim)
                             response = model.generate_content([prompt, img])
                             calisan_model = kisa_isim
-                            break # Çalıştığı an döngüyü kırar ve devam eder
+                            break 
                         except Exception:
                             continue
                             
                     if not response:
                         raise Exception("Bulunan yetkili modellerin hiçbiri bu görseli okumayı başaramadı.")
                     
-                    # JSON Çözümleme
-                    raw_text = response.text.strip()
-                    if raw_text.startswith("```json"):
-                        raw_text = raw_text.replace("```json", "").replace("```", "").strip()
-                    elif raw_text.startswith("```"):
-                        raw_text = raw_text.replace("```", "").strip()
+                    raw_text = response.text
+                    
+                    # LAZER KESİCİ: Sadece JSON başlangıç ve bitiş parantezlerinin arasını al
+                    baslangic = raw_text.find('[')
+                    bitis = raw_text.rfind(']')
+                    
+                    if baslangic != -1 and bitis != -1:
+                        json_metni = raw_text[baslangic:bitis+1]
+                        veri_listesi = json.loads(json_metni)
+                    else:
+                        raise Exception(f"Yapay zeka veriyi okudu ama beklenen formata çeviremedi. Gelen yanıt: {raw_text}")
                         
-                    veri_listesi = json.loads(raw_text)
                     df_clean = pd.DataFrame(veri_listesi)
+                    
+                    if df_clean.empty:
+                        raise Exception("Tablo okundu ancak geçerli veri bulunamadı.")
                     
                     df_clean["Net Lot"] = pd.to_numeric(df_clean["Net Lot"], errors='coerce').fillna(0)
                     df_clean["Maliyet"] = pd.to_numeric(df_clean["Maliyet"], errors='coerce').fillna(0)
