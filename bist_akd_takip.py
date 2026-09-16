@@ -35,7 +35,6 @@ if yuklenen_resim:
         if st.button("🚀 Görüntüyü Analiz Et (Yapay Zeka'yı Başlat)"):
             with st.spinner("Kartal gözüyle ekran okunuyor... (10-15 saniye sürebilir)"):
                 try:
-                    # Olası boşluk hatalarını silmek için .strip() ekledik
                     temiz_api_key = api_key.strip()
                     genai.configure(api_key=temiz_api_key)
                     img = Image.open(yuklenen_resim)
@@ -53,27 +52,37 @@ if yuklenen_resim:
                     Eksi (-) işaretlerine ve milyonluk rakamlara çok dikkat et.
                     """
                     
-                    # Sadece en kararlı iki modeli test edeceğiz
-                    model_isimleri = ['gemini-1.5-flash', 'gemini-1.5-pro']
+                    # 1. ADIM: API'ye sorarak izin verilen modelleri çek
+                    mevcut_modeller = []
+                    for m in genai.list_models():
+                        if 'generateContent' in m.supported_generation_methods:
+                            mevcut_modeller.append(m.name)
+                            
+                    if not mevcut_modeller:
+                        st.error("❌ Google bu API anahtarına hiçbir model için yetki vermemiş. Lütfen AI Studio'dan yepyeni bir anahtar oluşturun.")
+                        st.stop()
+                        
+                    # Mavi bir bilgi kutusuyla hangi modellerin bulunduğunu ekrana basalım (Hata ayıklama için harikadır)
+                    st.info(f"🔍 Google API ile bağlantı kuruldu. Erişilebilen Modeller: {', '.join([m.replace('models/', '') for m in mevcut_modeller[:3]])}...")
                     
+                    calisan_model = None
                     response = None
-                    calisan_model = ""
-                    hata_loglari = [] # Google'ın gerçek hatalarını burada toplayacağız
                     
-                    for m in model_isimleri:
+                    # 2. ADIM: Google'ın izin verdiği modelleri sırayla test et
+                    for m_isim in mevcut_modeller:
                         try:
-                            model = genai.GenerativeModel(m)
+                            kisa_isim = m_isim.replace("models/", "")
+                            model = genai.GenerativeModel(kisa_isim)
                             response = model.generate_content([prompt, img])
-                            calisan_model = m
-                            break 
-                        except Exception as e:
-                            hata_loglari.append(f"{m} HAKİKİ HATA -> {str(e)}")
-                            continue 
+                            calisan_model = kisa_isim
+                            break # Çalıştığı an döngüyü kırar ve devam eder
+                        except Exception:
+                            continue
                             
                     if not response:
-                        detayli_hata = " | ".join(hata_loglari)
-                        raise Exception(f"Google Reddediyor. Nedeni: {detayli_hata}")
+                        raise Exception("Bulunan yetkili modellerin hiçbiri bu görseli okumayı başaramadı.")
                     
+                    # JSON Çözümleme
                     raw_text = response.text.strip()
                     if raw_text.startswith("```json"):
                         raw_text = raw_text.replace("```json", "").replace("```", "").strip()
@@ -112,4 +121,4 @@ if yuklenen_resim:
                             st.dataframe(df_kritik.style.format({"Net Lot": "{:,.0f}", "Maliyet": "{:,.3f}"}), use_container_width=True, hide_index=True)
                             
                 except Exception as e:
-                    st.error(f"❌ {e}")
+                    st.error(f"❌ Bir hata oluştu: {e}")
