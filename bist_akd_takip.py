@@ -5,17 +5,17 @@ from PIL import Image
 import json
 import ast
 
-st.set_page_config(page_title="Kurumsal Takip (Hızlı Terminal)", page_icon="🦅", layout="centered")
+st.set_page_config(page_title="Kurumsal Takip (Karar Destek Terminali)", page_icon="🦅", layout="centered")
 
-st.title("🦅 BİST Kurumsal Takip: Hızlı Day-Trade Terminali")
-st.markdown("Matriks AKD ekran görüntüsünü yükleyin veya sürükleyin, anında trader analizi alın.")
+st.title("🦅 BİST Kurumsal Takip: Trader Karar Terminali")
+st.markdown("Matriks AKD ekran görüntüsünü yükleyin; sistem anında **AL / SAT / TUT** sinyali ve gerekçesini versin.")
 
 with st.sidebar:
     st.header("⚙️ Ayarlar")
     
     if "GEMINI_API_KEY" in st.secrets:
         api_key = st.secrets["GEMINI_API_KEY"]
-        st.success("✅ API Anahtarı sistem kasasından otomatik yüklendi!")
+        st.success("✅ API Anahtarı kasadan otomatik yüklendi!")
     else:
         api_key = st.text_input("Gemini API Anahtarı:", type="password")
         st.markdown("[Ücretsiz API Anahtarınızı Buradan Alabilirsiniz](https://aistudio.google.com/app/apikey)")
@@ -28,21 +28,21 @@ KRITIK_KURUMLAR = ["BANK OF AMERICA", "BOFA", "TERA", "CITIBANK", "CİTİBANK", 
 def kurum_tespit(kurum_adi):
     return any(k in str(kurum_adi).upper() for k in KRITIK_KURUMLAR)
 
-def hizli_analiz(resim_dosyasi, api_key):
+def karar_destek_analizi(resim_dosyasi, api_key):
     genai.configure(api_key=api_key.strip())
     img = Image.open(resim_dosyasi)
     
-    # Güncel ve en hızlı flash model (gemini-3.6-flash)
     model = genai.GenerativeModel('gemini-3.6-flash')
     
     prompt = """
-    SEN UZMAN BİR DAY-TRADER VE BİLGİSAYAR SİSTEMİSİN.
-    Ekran görüntüsündeki aracı kurum dağılımı (AKD) tablosunu oku.
+    SEN UZMAN BİR DAY-TRADER VE RİSK YÖNETİCİSİSİN.
+    Ekran görüntüsündeki aracı kurum dağılımı (AKD) tablosunu incele.
     
     Bana SADECE VE SADECE aşağıdaki formatta bir JSON döndür. Başka hiçbir açıklama yazma.
     
     {
-      "yorum": "Buraya tabloya bakarak 3-4 cümlelik Türkçe day-trader yorumunu yaz (Kim tahtayı sürüklüyor? Fiyat baskı yönü ne?).",
+      "sinyal": "AL", 
+      "gerekce": "Buraya 3-4 cümlelik Türkçe trader yorumunu yaz: Hangi kurum alıyor/satıyor, maliyetlerin fiyata etkisi nedir ve neden bu sinyal üretildi?",
       "veri": [
         {"Kurum": "YAPI KREDI", "Net Lot": 2096877, "Maliyet": 12.134},
         {"Kurum": "BANK OF AMERICA", "Net Lot": 5668458, "Maliyet": 12.471},
@@ -50,6 +50,7 @@ def hizli_analiz(resim_dosyasi, api_key):
       ]
     }
     
+    NOT: "sinyal" alanı KESİNLİKLE sadece "AL", "SAT" veya "TUT" kelimelerinden biri olmalıdır.
     KURALLAR: Rakamlarda binlik ayracı kullanma, ondalık için nokta kullan, 'Diğer' maliyeti 0 olsun.
     """
     
@@ -74,7 +75,8 @@ def hizli_analiz(resim_dosyasi, api_key):
         except Exception as e:
             raise Exception(f"Çeviri Hatası: {e}\n\nVeri:\n{json_metni}")
             
-    yorum = data.get("yorum", "Yorum üretilemedi.")
+    sinyal = data.get("sinyal", "TUT").upper()
+    gerekce = data.get("gerekce", "Yorum üretilemedi.")
     veri_listesi = data.get("veri", [])
         
     df = pd.DataFrame(veri_listesi)
@@ -85,7 +87,7 @@ def hizli_analiz(resim_dosyasi, api_key):
     df["Maliyet"] = pd.to_numeric(df["Maliyet"], errors='coerce').fillna(0)
     df = df[df["Net Lot"] != 0].sort_values(by="Net Lot", ascending=False)
     
-    return yorum, df
+    return sinyal, gerekce, df
 
 # ARAYÜZ
 yuklenen_dosya = st.file_uploader("Matriks Ekran Görüntüsünü Yükleyin", type=['png', 'jpg', 'jpeg'])
@@ -96,19 +98,26 @@ if yuklenen_dosya:
     if not api_key:
         st.warning("⚠️ Lütfen API Anahtarınızı girin.")
     else:
-        if st.button("🚀 Hızlı Analizi Başlat", use_container_width=True):
-            with st.spinner("Şimşek hızıyla analiz ediliyor..."):
+        if st.button("🚀 Karar Destek Analizini Başlat", use_container_width=True):
+            with st.spinner("Piyasa röntgeni çekiliyor..."):
                 try:
-                    yorum, df = hizli_analiz(yuklenen_dosya, api_key)
+                    sinyal, gerekce, df = karar_destek_analizi(yuklenen_dosya, api_key)
                     
-                    st.info(f"💡 **Trader Yorumu:**\n\n{yorum}")
+                    # SİNYALE GÖRE RENKLİ GÖRSEL ALARMLAR
+                    if sinyal == "AL":
+                        st.success(### 🟢 SİNYAL: GÜÇLÜ AL\n\n**Gerekçe:** {gerekce}")
+                    elif sinyal == "SAT":
+                        st.error(### 🔴 SİNYAL: GÜÇLÜ SAT\n\n**Gerekçe:** {gerekce}")
+                    else:
+                        st.warning(### 🟡 SİNYAL: TUT / BEKLE\n\n**Gerekçe:** {gerekce}")
+                    
                     st.dataframe(df.style.format({"Net Lot": "{:,.0f}", "Maliyet": "{:,.3f}"}), use_container_width=True, hide_index=True)
                     
                     df_kritik = df[df["Kurum"].apply(kurum_tespit)].copy()
                     baski = df_kritik["Net Lot"].sum() if not df_kritik.empty else 0
                     if baski > 0:
-                        st.success(f"🟢 **Kritik Kurumlar:** Net +{baski:,.0f} Lot Alımda")
-                    elif baski < 0:
-                        st.error(f"🔴 **Kritik Kurumlar:** Net {baski:,.0f} Lot Satışta")
+                        st.info(f"📊 **Kritik Kurumlar Toplamı:** Net +{baski:,.0f} Lot")
+                    else:
+                        st.info(f"📊 **Kritik Kurumlar Toplamı:** Net {baski:,.0f} Lot")
                 except Exception as e:
                     st.error(f"❌ Analiz Hatası: {e}")
