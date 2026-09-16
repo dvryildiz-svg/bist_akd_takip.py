@@ -38,7 +38,9 @@ if yuklenen_resim:
                 try:
                     # Gemini Modelini Bağla
                     genai.configure(api_key=api_key)
-                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    
+                    # HATA DÜZELTMESİ: Model adını en güncel ve zeki Pro sürümü ile değiştirdik
+                    model = genai.GenerativeModel('gemini-1.5-pro-latest') 
                     
                     # Resmi hazırla
                     img = Image.open(yuklenen_resim)
