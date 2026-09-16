@@ -103,13 +103,13 @@ if yuklenen_dosya:
                 try:
                     sinyal, gerekce, df = karar_destek_analizi(yuklenen_dosya, api_key)
                     
-                    # SİNYALE GÖRE RENKLİ GÖRSEL ALARMLAR
+                    # SİNYALE GÖRE RENKLİ GÖRSEL ALARMLAR (Tırnak hataları giderildi)
                     if sinyal == "AL":
-                        st.success(### 🟢 SİNYAL: GÜÇLÜ AL\n\n**Gerekçe:** {gerekce}")
+                        st.success(f"🟢 **SİNYAL: GÜÇLÜ AL**\n\n**Gerekçe:** {gerekce}")
                     elif sinyal == "SAT":
-                        st.error(### 🔴 SİNYAL: GÜÇLÜ SAT\n\n**Gerekçe:** {gerekce}")
+                        st.error(f"🔴 **SİNYAL: GÜÇLÜ SAT**\n\n**Gerekçe:** {gerekce}")
                     else:
-                        st.warning(### 🟡 SİNYAL: TUT / BEKLE\n\n**Gerekçe:** {gerekce}")
+                        st.warning(f"🟡 **SİNYAL: TUT / BEKLE**\n\n**Gerekçe:** {gerekce}")
                     
                     st.dataframe(df.style.format({"Net Lot": "{:,.0f}", "Maliyet": "{:,.3f}"}), use_container_width=True, hide_index=True)
                     
