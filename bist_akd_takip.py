@@ -4,7 +4,6 @@ import google.generativeai as genai
 from PIL import Image
 import json
 import ast
-import re
 
 st.set_page_config(page_title="Kurumsal Takip (Çift Ekran)", page_icon="🦅", layout="wide")
 
@@ -33,15 +32,13 @@ def analiz_motoru(resim_dosyasi, api_key):
     genai.configure(api_key=api_key.strip())
     img = Image.open(resim_dosyasi)
     
-    # PROMPT: Üçlü çift tırnak ile kilitlendi (""")
     prompt = """
     SEN UZMAN BİR DAY-TRADER VE BİLGİSAYAR SİSTEMİSİN.
     Ekran görüntüsündeki aracı kurum dağılımı (AKD) tablosunu oku.
     
-    Bana SADECE VE SADECE aşağıdaki formatta, ```json ve ``` etiketleri arasına alınmış bir veri döndür.
+    Bana SADECE VE SADECE aşağıdaki formatta bir JSON döndür.
     Bunun dışında 'Data extraction', 'Header', 'Rows' gibi analiz adımlarını KESİNLİKLE yazma.
     
-    ```json
     {
       "yorum": "Buraya tabloya bakarak 3-4 cümlelik Türkçe day-trader yorumunu yaz (Kim tahtayı sürüklüyor? Fiyat baskı yönü ne?).",
       "veri": [
@@ -50,7 +47,6 @@ def analiz_motoru(resim_dosyasi, api_key):
         {"Kurum": "Diğer", "Net Lot": 62956611, "Maliyet": 0}
       ]
     }
-    ```
     
     ÖNEMLİ KURALLAR:
     1. Rakamlarda binlik ayracı (nokta) KESİNLİKLE KULLANMA (Örn: 2096877 yaz).
@@ -80,16 +76,14 @@ def analiz_motoru(resim_dosyasi, api_key):
     
     raw_text = response.text
     
-    if "```json" in raw_text.lower():
-        json_metni = re.split(r'```json', raw_text, flags=re.IGNORECASE)[1].split("```")[0].strip()
-    elif "```" in raw_text:
-        json_metni = raw_text.split("```")[1].strip()
+    # EN GÜÇLÜ JSON CIMBIZI: Markdown dinlemez, doğrudan { ve } arasını alır.
+    start_idx = raw_text.find('{')
+    end_idx = raw_text.rfind('}')
+    
+    if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
+        json_metni = raw_text[start_idx:end_idx+1]
     else:
-        match = re.search(r'\{.*\}', raw_text, re.DOTALL)
-        if match:
-            json_metni = match.group(0)
-        else:
-            raise Exception(f"JSON bloğu bulunamadı. Yapay Zeka Yanıtı:\n{raw_text}")
+        raise Exception(f"JSON süslü parantezleri bulunamadı. Yapay Zeka Yanıtı:\n{raw_text}")
         
     # Sıfır hatası zırhı
     json_metni = json_metni.replace("0,000", "0").replace("0.000", "0").replace("0000", "0")
