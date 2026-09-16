@@ -33,14 +33,15 @@ def analiz_motoru(resim_dosyasi, api_key):
     genai.configure(api_key=api_key.strip())
     img = Image.open(resim_dosyasi)
     
-    # YENİ PROMPT: Her şeyi tek bir JSON objesine hapsediyoruz
-    prompt = """
+    # PROMPT'U MARKDOWN JSON FORMATINA ZORLUYORUZ (Susturucu Kat Sayısı Arttırıldı)
+    prompt = '''
     SEN UZMAN BİR DAY-TRADER VE BİLGİSAYAR SİSTEMİSİN.
     Ekran görüntüsündeki aracı kurum dağılımı (AKD) tablosunu oku.
     
-    KESİNLİKLE KENDİ KENDİNE DÜŞÜNME, KARALAMA VEYA İNGİLİZCE ANALİZ ADIMLARINI YAZMA. 
-    Bana SADECE VE SADECE aşağıdaki formatta, süslü parantez ile başlayan TEK BİR JSON OBJESİ döndür:
+    Bana SADECE VE SADECE aşağıdaki formatta, ```json ve ``` etiketleri arasına alınmış bir veri döndür.
+    Bunun dışında 'Data extraction', 'Header', 'Rows' gibi analiz adımlarını KESİNLİKLE yazma.
     
+    ```json
     {
       "yorum": "Buraya tabloya bakarak 3-4 cümlelik Türkçe day-trader yorumunu yaz (Kim tahtayı sürüklüyor? Fiyat baskı yönü ne?).",
       "veri": [
@@ -49,12 +50,13 @@ def analiz_motoru(resim_dosyasi, api_key):
         {"Kurum": "Diğer", "Net Lot": 62956611, "Maliyet": 0}
       ]
     }
+    ```
     
     ÖNEMLİ KURALLAR:
     1. Rakamlarda binlik ayracı (nokta) KESİNLİKLE KULLANMA (Örn: 2096877 yaz).
     2. Ondalık kısımlar için VİRGÜL YERİNE NOKTA kullan (Örn: 12.134 yaz).
     3. 'Diğer' satırında maliyet '0,000' ise SADECE 0 yaz. Sayıların başına sıfır ekleme.
-    """
+    '''
     
     mevcut_modeller = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
     if not mevcut_modeller:
@@ -78,27 +80,36 @@ def analiz_motoru(resim_dosyasi, api_key):
     
     raw_text = response.text
     
-    # Yeni Cımbız: Sadece Süslü Parantezleri ({}) yakalayacağız
-    match = re.search(r'\{.*\}', raw_text, re.DOTALL)
-    if match:
-        json_metni = match.group(0)
-        
-        # Sıfır hatası zırhı
-        json_metni = json_metni.replace("0,000", "0").replace("0.000", "0").replace("0000", "0")
-        
-        try:
-            data = json.loads(json_metni)
-        except Exception:
-            try:
-                data = ast.literal_eval(json_metni)
-            except Exception as e:
-                raise Exception(f"JSON Çeviri Hatası: {e}\n\nHatalı Veri:\n{json_metni}")
-                
-        yorum = data.get("yorum", "Yapay zeka yorum üretemedi, ancak veriler çekildi.")
-        veri_listesi = data.get("veri", [])
-        
+    # YENİ CIMBIZ: Sadece Markdown bloğunun (```json ... ```) içini alır.
+    if "```json" in raw_text.lower():
+        json_metni = re.split(r'```json', raw_text, flags=re.IGNORECASE)[1].split("```")[0].strip()
+    elif "```" in raw_text:
+        json_metni = raw_text.split("```")[1].strip()
     else:
-        raise Exception(f"Geçerli JSON objesi bulunamadı. Yapay Zeka Yanıtı:\n{raw_text}")
+        # Eğer yapay zeka bloğu unuttuysa, parantez aramasını devreye sok
+        match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+        if match:
+            json_metni = match.group(0)
+        else:
+            raise Exception(f"JSON bloğu bulunamadı. Yapay Zeka Yanıtı:
+{raw_text}")
+        
+    # Sıfır hatası zırhı
+    json_metni = json_metni.replace("0,000", "0").replace("0.000", "0").replace("0000", "0")
+    
+    try:
+        data = json.loads(json_metni)
+    except Exception:
+        try:
+            data = ast.literal_eval(json_metni)
+        except Exception as e:
+            raise Exception(f"JSON Çeviri Hatası: {e}
+
+Hatalı Veri:
+{json_metni}")
+            
+    yorum = data.get("yorum", "Yapay zeka yorum üretemedi, ancak veriler çekildi.")
+    veri_listesi = data.get("veri", [])
         
     df = pd.DataFrame(veri_listesi)
     if df.empty:
@@ -138,7 +149,9 @@ if resim_1 or resim_2:
                     with st.spinner("1. Ekran analiz ediliyor..."):
                         try:
                             yorum1, df1, model1 = analiz_motoru(resim_1, api_key)
-                            st.info(f"💡 **Trader Yorumu:**\n\n{yorum1}")
+                            st.info(f"💡 **Trader Yorumu:**
+
+{yorum1}")
                             st.caption(f"Okuyan Model: {model1}")
                             
                             st.dataframe(df1.style.format({"Net Lot": "{:,.0f}", "Maliyet": "{:,.3f}"}), use_container_width=True, hide_index=True)
@@ -157,7 +170,9 @@ if resim_1 or resim_2:
                     with st.spinner("2. Ekran analiz ediliyor..."):
                         try:
                             yorum2, df2, model2 = analiz_motoru(resim_2, api_key)
-                            st.info(f"💡 **Trader Yorumu:**\n\n{yorum2}")
+                            st.info(f"💡 **Trader Yorumu:**
+
+{yorum2}")
                             st.caption(f"Okuyan Model: {model2}")
                             
                             st.dataframe(df2.style.format({"Net Lot": "{:,.0f}", "Maliyet": "{:,.3f}"}), use_container_width=True, hide_index=True)
