@@ -4,7 +4,7 @@ import google.generativeai as genai
 from PIL import Image
 import json
 import ast
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import requests
 
 st.set_page_config(page_title="Kurumsal Takip (Google Sheets Bulut Arşivli)", page_icon="🦅", layout="centered")
@@ -23,7 +23,7 @@ with st.sidebar:
         st.markdown("[Ücretsiz API Anahtarınızı Buradan Alabilirsiniz](https://aistudio.google.com/app/apikey)")
         
     st.markdown("---")
-    st.info("💡 Her analiz doğrudan buluttaki Google Sheets arşivine tarih ve hisse bazlı işlenir.")
+    st.info("💡 Her analiz doğrudan buluttaki Google Sheets arşivine Türkiye saatiyle işlenir.")
 
 KRITIK_KURUMLAR = ["BANK OF AMERICA", "BOFA", "TERA", "CITIBANK", "CİTİBANK", "DEUTSCHE"]
 GOOGLE_SHEET_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwPdejL3zlyh9xIHd3lgyFR5rSc3BzCT5PMK1hW7fZQULmIdhDii2RpYEEXd3mhIsNJbw/exec"
@@ -144,8 +144,10 @@ if yuklenen_dosya:
             with st.spinner("Piyasa röntgeni çekiliyor ve Google Sheets'e işleniyor..."):
                 try:
                     hisse_adi, sinyal, gerekce, df = karar_destek_analizi(yuklenen_dosya, api_key)
-                    # Saat formatı düzeltildi (%Y-%m-%d %H:%M:%S)
-                    simdiki_zaman = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    # Türkiye Saat Dilimi (UTC+3) sabitlendi
+                    tr_tz = timezone(timedelta(hours=3))
+                    simdiki_zaman = datetime.now(tr_tz).strftime("%Y-%m-%d %H:%M:%S")
                     
                     # Kritik kurumlar toplamı
                     df_kritik = df[df["Kurum"].apply(kurum_tespit)].copy()
