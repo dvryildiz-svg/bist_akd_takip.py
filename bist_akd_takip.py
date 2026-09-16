@@ -3,6 +3,7 @@ import pandas as pd
 import google.generativeai as genai
 from PIL import Image
 import json
+import ast # YENİ: Tek tırnak ve bozuk format hatalarını zorla çözer
 
 st.set_page_config(page_title="Kurumsal Takip (Yapay Zeka)", page_icon="🦅", layout="wide")
 
@@ -47,15 +48,21 @@ if yuklenen_resim:
                     
                     prompt = """
                     Sen uzman bir Borsa İstanbul veri analistisin.
-                    Bu ekran görüntüsündeki aracı kurum dağılımı (AKD) tablosunu incele.
-                    Tablodaki kurum isimlerini, 'Net Adet' (veya Net) miktarlarını ve 'Maliyet' verilerini çıkar.
-                    Bana SADECE geçerli bir JSON formatında şu yapıda veri döndür:
+                    Ekran görüntüsündeki aracı kurum dağılımı (AKD) tablosunu incele.
+                    Tablodaki 'Açıklama' altındaki kurum isimlerini, 'Net Adet' miktarlarını ve 'Maliyet' verilerini çıkar.
+                    
+                    ÇOK ÖNEMLİ KURALLAR:
+                    1. SADECE VE SADECE köşeli parantez ile başlayan JSON dizisi döndür.
+                    2. Key ve Valuelar için KESİNLİKLE ÇİFT TIRNAK (") kullan.
+                    3. Rakamlarda binlik ayracı olarak NOKTA veya VİRGÜL KULLANMA. (Örn: 5.668.458 yerine 5668458 yaz).
+                    4. Eksi (-) işaretlerine dikkat et.
+                    
+                    Örnek Format:
                     [
-                      {"Kurum": "BANK OF AMERICA", "Net Lot": 1500000, "Maliyet": 12.50},
-                      {"Kurum": "İŞ YATIRIM", "Net Lot": -500000, "Maliyet": 12.45}
+                      {"Kurum": "YAPI KREDI", "Net Lot": 2096877, "Maliyet": 12.134},
+                      {"Kurum": "BANK OF AMERICA", "Net Lot": 5668458, "Maliyet": 12.471},
+                      {"Kurum": "IS", "Net Lot": -6663155, "Maliyet": 12.162}
                     ]
-                    Başka hiçbir açıklama metni ekleme. Sayılarda binlik ayracı kullanma, ondalıklar için nokta kullan.
-                    Eksi (-) işaretlerine ve milyonluk rakamlara çok dikkat et.
                     """
                     
                     mevcut_modeller = []
@@ -75,27 +82,46 @@ if yuklenen_resim:
                     for m_isim in mevcut_modeller:
                         try:
                             kisa_isim = m_isim.replace("models/", "")
-                            model = genai.GenerativeModel(kisa_isim)
+                            # YAPAY ZEKAYI HATA YAPAMAYACAK ŞEKİLDE SIKIŞTIRIYORUZ
+                            model = genai.GenerativeModel(
+                                model_name=kisa_isim,
+                                generation_config={"response_mime_type": "application/json"}
+                            )
                             response = model.generate_content([prompt, img])
                             calisan_model = kisa_isim
                             break 
                         except Exception:
-                            continue
+                            # Eğer yeni strict mod desteklenmiyorsa eski usül dene
+                            try:
+                                model_fallback = genai.GenerativeModel(kisa_isim)
+                                response = model_fallback.generate_content([prompt, img])
+                                calisan_model = kisa_isim
+                                break
+                            except:
+                                continue
                             
                     if not response:
                         raise Exception("Bulunan yetkili modellerin hiçbiri bu görseli okumayı başaramadı.")
                     
                     raw_text = response.text
                     
-                    # LAZER KESİCİ: Sadece JSON başlangıç ve bitiş parantezlerinin arasını al
                     baslangic = raw_text.find('[')
                     bitis = raw_text.rfind(']')
                     
                     if baslangic != -1 and bitis != -1:
                         json_metni = raw_text[baslangic:bitis+1]
-                        veri_listesi = json.loads(json_metni)
+                        
+                        # ÇİFT KATMANLI OKUMA ZIRHI
+                        try:
+                            veri_listesi = json.loads(json_metni)
+                        except Exception:
+                            try:
+                                # ast.literal_eval tek tırnakları ve bozuk formatları affeder
+                                veri_listesi = ast.literal_eval(json_metni)
+                            except Exception as e:
+                                raise Exception(f"Okunan veri formatı hala düzeltilemedi: {e}. Gelen Metin:\n{json_metni}")
                     else:
-                        raise Exception(f"Yapay zeka veriyi okudu ama beklenen formata çeviremedi. Gelen yanıt: {raw_text}")
+                        raise Exception(f"Yapay zeka JSON üretemedi. Gelen yanıt: {raw_text}")
                         
                     df_clean = pd.DataFrame(veri_listesi)
                     
