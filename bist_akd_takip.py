@@ -33,28 +33,27 @@ def analiz_motoru(resim_dosyasi, api_key):
     genai.configure(api_key=api_key.strip())
     img = Image.open(resim_dosyasi)
     
-    # PROMPT'U SIFIR HATASINA KARŞI ÇOK DAHA KATI HALE GETİRDİK
+    # YENİ PROMPT: Her şeyi tek bir JSON objesine hapsediyoruz
     prompt = """
     SEN UZMAN BİR DAY-TRADER VE BİLGİSAYAR SİSTEMİSİN.
-    Ekran görüntüsündeki aracı kurum dağılımı (AKD) tablosunu oku ve İKİ BÖLÜM halinde yanıtla.
-
-    ---BÖLÜM 1: TRADER YORUMU---
-    Tabloya bakarak gün içi trade eden biri için özet geç: Kim tahtayı sürüklüyor (en agresif alıcı/satıcı)? Maliyetlere bakarak fiyattaki baskı yönü (aşağı/yukarı) nedir?
-    Yorumun 3-4 cümleyi geçmesin.
-
-    ---BÖLÜM 2: JSON VERİSİ---
-    SADECE aşağıdaki formata uygun, köşeli parantez ile başlayan geçerli bir JSON dizisi oluştur.
+    Ekran görüntüsündeki aracı kurum dağılımı (AKD) tablosunu oku.
+    
+    KESİNLİKLE KENDİ KENDİNE DÜŞÜNME, KARALAMA VEYA İNGİLİZCE ANALİZ ADIMLARINI YAZMA. 
+    Bana SADECE VE SADECE aşağıdaki formatta, süslü parantez ile başlayan TEK BİR JSON OBJESİ döndür:
+    
+    {
+      "yorum": "Buraya tabloya bakarak 3-4 cümlelik Türkçe day-trader yorumunu yaz (Kim tahtayı sürüklüyor? Fiyat baskı yönü ne?).",
+      "veri": [
+        {"Kurum": "YAPI KREDI", "Net Lot": 2096877, "Maliyet": 12.134},
+        {"Kurum": "BANK OF AMERICA", "Net Lot": 5668458, "Maliyet": 12.471},
+        {"Kurum": "Diğer", "Net Lot": 62956611, "Maliyet": 0}
+      ]
+    }
+    
     ÖNEMLİ KURALLAR:
-    1. Rakamlarda binlik ayracı (nokta) KESİNLİKLE KULLANMA (Örn: 2.096.877 yerine 2096877 yaz).
-    2. Ondalık kısımlar için VİRGÜL YERİNE NOKTA kullan (Örn: 12,134 yerine 12.134 yaz).
-    3. 'Diğer' veya benzeri satırlarda maliyet '0,000' veya '0' ise SADECE 0 yaz. (ASLA 000 veya 0.000 yazma). Sayıların başına ASLA fazladan sıfır ekleme.
-
-    Örnek Çıktı:
-    [
-      {"Kurum": "YAPI KREDI", "Net Lot": 2096877, "Maliyet": 12.134},
-      {"Kurum": "BANK OF AMERICA", "Net Lot": 5668458, "Maliyet": 12.471},
-      {"Kurum": "Diger", "Net Lot": 62956611, "Maliyet": 0}
-    ]
+    1. Rakamlarda binlik ayracı (nokta) KESİNLİKLE KULLANMA (Örn: 2096877 yaz).
+    2. Ondalık kısımlar için VİRGÜL YERİNE NOKTA kullan (Örn: 12.134 yaz).
+    3. 'Diğer' satırında maliyet '0,000' ise SADECE 0 yaz. Sayıların başına sıfır ekleme.
     """
     
     mevcut_modeller = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
@@ -79,27 +78,27 @@ def analiz_motoru(resim_dosyasi, api_key):
     
     raw_text = response.text
     
-    match = re.search(r'\[.*\]', raw_text, re.DOTALL)
+    # Yeni Cımbız: Sadece Süslü Parantezleri ({}) yakalayacağız
+    match = re.search(r'\{.*\}', raw_text, re.DOTALL)
     if match:
         json_metni = match.group(0)
         
-        # KOD KIRILMASINI ENGELLEYEN YENİ ZIRH (Gereksiz sıfırları doğrudan sıfırlar)
+        # Sıfır hatası zırhı
         json_metni = json_metni.replace("0,000", "0").replace("0.000", "0").replace("0000", "0")
         
-        yorum_kismi = raw_text[:match.start()].strip()
-        yorum = re.sub(r'---.*?---', '', yorum_kismi).strip()
-        if not yorum:
-            yorum = "Yapay zeka yorum üretemedi, ancak veriler başarıyla çekildi."
-            
         try:
-            veri_listesi = json.loads(json_metni)
+            data = json.loads(json_metni)
         except Exception:
             try:
-                veri_listesi = ast.literal_eval(json_metni)
+                data = ast.literal_eval(json_metni)
             except Exception as e:
                 raise Exception(f"JSON Çeviri Hatası: {e}\n\nHatalı Veri:\n{json_metni}")
+                
+        yorum = data.get("yorum", "Yapay zeka yorum üretemedi, ancak veriler çekildi.")
+        veri_listesi = data.get("veri", [])
+        
     else:
-        raise Exception(f"Geçerli format bulunamadı. Yanıt:\n{raw_text}")
+        raise Exception(f"Geçerli JSON objesi bulunamadı. Yapay Zeka Yanıtı:\n{raw_text}")
         
     df = pd.DataFrame(veri_listesi)
     if df.empty:
