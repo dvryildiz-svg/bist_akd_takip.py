@@ -33,6 +33,7 @@ def analiz_motoru(resim_dosyasi, api_key):
     genai.configure(api_key=api_key.strip())
     img = Image.open(resim_dosyasi)
     
+    # PROMPT'U SIFIR HATASINA KARŞI ÇOK DAHA KATI HALE GETİRDİK
     prompt = """
     SEN UZMAN BİR DAY-TRADER VE BİLGİSAYAR SİSTEMİSİN.
     Ekran görüntüsündeki aracı kurum dağılımı (AKD) tablosunu oku ve İKİ BÖLÜM halinde yanıtla.
@@ -43,10 +44,16 @@ def analiz_motoru(resim_dosyasi, api_key):
 
     ---BÖLÜM 2: JSON VERİSİ---
     SADECE aşağıdaki formata uygun, köşeli parantez ile başlayan geçerli bir JSON dizisi oluştur.
-    Başka tek bir kelime ekleme. Rakamlarda binlik ayracı KESİNLİKLE KULLANMA.
+    ÖNEMLİ KURALLAR:
+    1. Rakamlarda binlik ayracı (nokta) KESİNLİKLE KULLANMA (Örn: 2.096.877 yerine 2096877 yaz).
+    2. Ondalık kısımlar için VİRGÜL YERİNE NOKTA kullan (Örn: 12,134 yerine 12.134 yaz).
+    3. 'Diğer' veya benzeri satırlarda maliyet '0,000' veya '0' ise SADECE 0 yaz. (ASLA 000 veya 0.000 yazma). Sayıların başına ASLA fazladan sıfır ekleme.
+
+    Örnek Çıktı:
     [
       {"Kurum": "YAPI KREDI", "Net Lot": 2096877, "Maliyet": 12.134},
-      {"Kurum": "BANK OF AMERICA", "Net Lot": 5668458, "Maliyet": 12.471}
+      {"Kurum": "BANK OF AMERICA", "Net Lot": 5668458, "Maliyet": 12.471},
+      {"Kurum": "Diger", "Net Lot": 62956611, "Maliyet": 0}
     ]
     """
     
@@ -75,7 +82,12 @@ def analiz_motoru(resim_dosyasi, api_key):
     match = re.search(r'\[.*\]', raw_text, re.DOTALL)
     if match:
         json_metni = match.group(0)
-        yorum = raw_text[:match.start()].replace("---BÖLÜM 1: TRADER YORUMU---", "").strip()
+        
+        # KOD KIRILMASINI ENGELLEYEN YENİ ZIRH (Gereksiz sıfırları doğrudan sıfırlar)
+        json_metni = json_metni.replace("0,000", "0").replace("0.000", "0").replace("0000", "0")
+        
+        yorum_kismi = raw_text[:match.start()].strip()
+        yorum = re.sub(r'---.*?---', '', yorum_kismi).strip()
         if not yorum:
             yorum = "Yapay zeka yorum üretemedi, ancak veriler başarıyla çekildi."
             
@@ -85,9 +97,9 @@ def analiz_motoru(resim_dosyasi, api_key):
             try:
                 veri_listesi = ast.literal_eval(json_metni)
             except Exception as e:
-                raise Exception(f"JSON Çeviri Hatası: {e}")
+                raise Exception(f"JSON Çeviri Hatası: {e}\n\nHatalı Veri:\n{json_metni}")
     else:
-        raise Exception(f"Geçerli format bulunamadı. Yanıt: {raw_text}")
+        raise Exception(f"Geçerli format bulunamadı. Yanıt:\n{raw_text}")
         
     df = pd.DataFrame(veri_listesi)
     if df.empty:
@@ -118,7 +130,6 @@ if resim_1 or resim_2:
     if not api_key:
         st.warning("⚠️ Lütfen API Anahtarınızı girin.")
     else:
-        # Tek bir dev butonla iki ekranı birden ateşliyoruz
         if st.button("🚀 Yüklenen Ekranları Analiz Et (Yapay Zeka'yı Başlat)", use_container_width=True):
             
             res_sol, res_sag = st.columns(2)
